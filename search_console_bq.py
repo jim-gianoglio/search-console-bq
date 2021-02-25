@@ -4,12 +4,14 @@ import requests
 import json
 import pandas as pd
 from google.cloud import bigquery
+from datetime import datetime
 
 ########### SET YOUR PARAMETERS HERE ####################################
-PROPERTIES = ["https://www.google.com","https://www.apple.com"]
-BQ_DATASET_NAME = 'test_dataset'
+BQ_DATASET_NAME = 'GSC'
+# BQ_DATASET_NAME = 'gsc_to_bq'
 BQ_TABLE_NAME = 'test_table'
-SERVICE_ACCOUNT_FILE = 'my_key.json'
+SERVICE_ACCOUNT_FILE = '../../service_account_keys/broadridge_gsc_to_bq.json'
+# SERVICE_ACCOUNT_FILE = '../../service_account_keys/gianoglio_gsc_to_bq.json'
 ################ END OF PARAMETERS ######################################
 
 SCOPES = ['https://www.googleapis.com/auth/webmasters']
@@ -22,13 +24,25 @@ service = build(
     credentials=credentials
 )
 
+def get_properties():
+    response = service.sites().list().execute()
+    print(response)
+    properties = []
+    if len(response) > 0:
+        for entry in response["siteEntry"]:
+            properties.append(entry["siteUrl"])
+    else:
+        print("This service account does not have access to any properties.")
+    return properties
+
+
 def get_sc_df(site_url,start_date,end_date,start_row):
     """Grab Search Console data for the specific property and send it to BigQuery."""
 
     request = {
       'startDate': start_date,
       'endDate': end_date,
-      'dimensions': ['query','device', 'page', 'date'], # uneditable to enforce a nice clean dataframe at the end!
+      'dimensions': ['date', 'query', 'page'], # uneditable to enforce a nice clean dataframe at the end!
       'rowLimit': 25000,
       'startRow': start_row
        }
@@ -42,7 +56,7 @@ def get_sc_df(site_url,start_date,end_date,start_row):
         df = pd.DataFrame.from_dict(x)
         
         # split the keys list into columns
-        df[['query','device', 'page', 'date']] = pd.DataFrame(df['keys'].values.tolist(), index= df.index)
+        df[['date', 'query', 'page']] = pd.DataFrame(df['keys'].values.tolist(), index= df.index)
         
         # Drop the key columns
         result = df.drop(['keys'],axis=1)
@@ -69,10 +83,22 @@ def get_sc_df(site_url,start_date,end_date,start_row):
         print("There are no more results to return.")
 
 # Loop through all defined properties, for up to 100,000 rows of data in each
-for p in PROPERTIES:
-    for x in range(0,100000,25000):
-        y = get_sc_df(p,"2020-01-01","2020-01-01",x)
-        if len(y) < 25000:
-            break
-        else:
-            continue
+properties = get_properties()
+# properties = ["https://fa.ml.com/"]
+date_list = [d.strftime("%Y-%m-%d") for d in pd.date_range(start="2019-10-23", end="2021-02-10")]
+# print(date_list)
+# print(properties)
+for p in properties:
+    print("PROPERTY IS: " + p)
+    for d in date_list:
+        print("DATE: " + d)
+        for x in range(0,100000,25000):
+            print("START ROW (x) IS: ")
+            print(x)
+            y = get_sc_df(p,d,d,x)
+            print("NUM ROWS (y) IS: ")
+            print(len(y))
+            if len(y) < 25000:
+                break
+            else:
+                continue
